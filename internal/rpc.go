@@ -259,5 +259,9 @@ func parseHeight(s string) (uint64, bool, error) {
 }
 
 func normalizeBlsKey(s string) string {
-	return strings.ToLower(trim0x(strings.TrimSpace(s)))
+	s = strings.ToLower(trim0x(strings.TrimSpace(s)))
+	if len(s) > 96 && len(s)%2 == 0 {
+		s = s[len(s)-96:]
+	}
+	return s
 }
