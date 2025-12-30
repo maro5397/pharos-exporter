@@ -50,3 +50,15 @@ Usage of start:
   -rpc-poll-interval duration
         poll interval for latest block (default 1s)
 ```
+
+### Exported Metrics
+The `/metrics` endpoint includes default Go/process/promhttp metrics. Custom metrics exposed by this exporter:
+
+- `validator_active_timestamp` (gauge): Unix timestamp when validator active status was last observed.
+- `validator_active_total` (counter): Total number of blocks where the validator was active in the validator set.
+- `validator_endorse_total` (counter): Total number of endorse events observed in logs.
+- `validator_last_endorse_timestamp` (gauge): Unix timestamp of the last endorse event observed in logs.
+- `validator_last_propose_timestamp` (gauge): Unix timestamp of the last propose event observed in logs.
+- `validator_propose_total` (counter): Total number of propose attempts observed in logs.
+- `validator_vote_inclusion_timestamp` (gauge): Unix timestamp when the validator vote was last included.
+- `validator_vote_inclusion_total` (counter): Total number of blocks where the validator vote was included.
