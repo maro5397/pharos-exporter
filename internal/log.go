@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -15,6 +16,7 @@ type LogTailerConfig struct {
 	PollInterval time.Duration
 	Output       io.Writer
 	FromStart    bool
+	Metrics      *LogMetrics
 }
 
 type LogTailer struct {
@@ -23,6 +25,20 @@ type LogTailer struct {
 	reader *bufio.Reader
 	inode  uint64
 	offset int64
+}
+
+type LogMetrics struct {
+	proposeTotal       uint64
+	lastProposeUnix    int64
+	endorseTotal       map[string]uint64
+	lastEndorseUnix    int64
+}
+
+type LogMetricsSnapshot struct {
+	ProposeTotal            uint64
+	LastProposeTimestamp    int64
+	EndorseTotalByProposer  map[string]uint64
+	LastEndorseTimestamp    int64
 }
 
 func NewLogTailer(cfg LogTailerConfig) (*LogTailer, error) {
@@ -35,7 +51,16 @@ func NewLogTailer(cfg LogTailerConfig) (*LogTailer, error) {
 	if cfg.Output == nil {
 		cfg.Output = os.Stdout
 	}
+	if cfg.Metrics == nil {
+		cfg.Metrics = NewLogMetrics()
+	}
 	return &LogTailer{cfg: cfg}, nil
+}
+
+func NewLogMetrics() *LogMetrics {
+	return &LogMetrics{
+		endorseTotal: make(map[string]uint64),
+	}
 }
 
 func (t *LogTailer) Start(ctx context.Context) error {
@@ -63,6 +88,7 @@ func (t *LogTailer) Start(ctx context.Context) error {
 
 		line, err := t.reader.ReadBytes('\n')
 		if len(line) > 0 {
+			t.cfg.Metrics.HandleLine(string(line))
 			if _, werr := t.cfg.Output.Write(line); werr != nil {
 				return werr
 			}
@@ -149,4 +175,74 @@ func inodeFromInfo(info os.FileInfo) (uint64, error) {
 		return 0, fmt.Errorf("failed to read inode info")
 	}
 	return stat.Ino, nil
+}
+
+func (m *LogMetrics) HandleLine(line string) {
+	ts := parseLogTimestamp(line)
+
+	if strings.Contains(line, "Propose, seq:") {
+		m.proposeTotal++
+		m.lastProposeUnix = ts
+		return
+	}
+
+	if strings.Contains(line, "endorse seq ") {
+		proposer := parseEndorseProposer(line)
+		if proposer != "" {
+			m.endorseTotal[proposer]++
+		}
+		m.lastEndorseUnix = ts
+	}
+}
+
+func (m *LogMetrics) Snapshot() LogMetricsSnapshot {
+	clone := make(map[string]uint64, len(m.endorseTotal))
+	for k, v := range m.endorseTotal {
+		clone[k] = v
+	}
+	return LogMetricsSnapshot{
+		ProposeTotal:           m.proposeTotal,
+		LastProposeTimestamp:   m.lastProposeUnix,
+		EndorseTotalByProposer: clone,
+		LastEndorseTimestamp:   m.lastEndorseUnix,
+	}
+}
+
+func parseLogTimestamp(line string) int64 {
+	if len(line) == 0 || line[0] != '[' {
+		return time.Now().Unix()
+	}
+	end := strings.IndexByte(line, ']')
+	if end <= 1 {
+		return time.Now().Unix()
+	}
+	ts, err := time.Parse(time.RFC3339Nano, line[1:end])
+	if err != nil {
+		return time.Now().Unix()
+	}
+	return ts.Unix()
+}
+
+func parseEndorseProposer(line string) string {
+	const key = "proposer "
+	idx := strings.Index(line, key)
+	if idx < 0 {
+		return ""
+	}
+	start := idx + len(key)
+	if start >= len(line) {
+		return ""
+	}
+	end := start
+	for end < len(line) {
+		ch := line[end]
+		if ch == ',' || ch == ' ' || ch == '\n' || ch == '\r' {
+			break
+		}
+		end++
+	}
+	if end <= start {
+		return ""
+	}
+	return line[start:end]
 }
