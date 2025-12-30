@@ -4,11 +4,12 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"io"
 	"log"
-	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -76,7 +77,7 @@ func runStart(args []string) error {
 		return tailer.Start(gctx)
 	})
 
-	log.Printf("Metrics exposed at http://%s:%s/metrics", resolveLocalIP(), *exporterPort)
+	log.Printf("Metrics exposed at http://%s:%s/metrics", resolvePublicIP(), *exporterPort)
 	server := &http.Server{
 		Addr:    ":" + *exporterPort,
 		Handler: promhttp.Handler(),
@@ -101,35 +102,17 @@ func runStart(args []string) error {
 	return nil
 }
 
-func resolveLocalIP() string {
-	ifaces, err := net.Interfaces()
-	if err != nil {
-		return "127.0.0.1"
-	}
-	for _, iface := range ifaces {
-		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
-			continue
-		}
-		addrs, err := iface.Addrs()
-		if err != nil {
-			continue
-		}
-		for _, addr := range addrs {
-			var ip net.IP
-			switch v := addr.(type) {
-			case *net.IPNet:
-				ip = v.IP
-			case *net.IPAddr:
-				ip = v.IP
+func resolvePublicIP() string {
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get("https://ifconfig.me")
+	if err == nil {
+		defer resp.Body.Close()
+		b, rerr := io.ReadAll(resp.Body)
+		if rerr == nil {
+			ip := strings.TrimSpace(string(b))
+			if ip != "" {
+				return ip
 			}
-			if ip == nil {
-				continue
-			}
-			ip = ip.To4()
-			if ip == nil || ip.IsLoopback() {
-				continue
-			}
-			return ip.String()
 		}
 	}
 	return "127.0.0.1"
