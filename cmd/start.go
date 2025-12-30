@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"pharos-exporter/internal"
+
+	"golang.org/x/sync/errgroup"
 )
 
 func runStart(args []string) error {
@@ -21,9 +23,20 @@ func runStart(args []string) error {
 	checkBlockProof := fs.Bool("check-block-proof", true, "check signedBlsKeys trigger")
 	checkValidatorSet := fs.Bool("check-validator-set", true, "check validator set trigger")
 	pollInterval := fs.Duration("poll-interval", 1*time.Second, "poll interval for latest block")
+	logPath := fs.String("log-path", "", "path to log file to tail")
+	logFromStart := fs.Bool("log-from-start", false, "start reading log from beginning")
+	logPollInterval := fs.Duration("log-poll-interval", time.Second, "poll interval for log tailing")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
+	if *logPath == "" {
+		return errors.New("log-path is required")
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	g, gctx := errgroup.WithContext(ctx)
 
 	tracker, err := internal.NewBlockTracker(internal.BlockTrackerConfig{
 		RPCURL:            *rpcURL,
@@ -35,11 +48,24 @@ func runStart(args []string) error {
 	if err != nil {
 		return err
 	}
+	g.Go(func() error {
+		return tracker.Start(gctx)
+	})
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
+	tailer, err := internal.NewLogTailer(internal.LogTailerConfig{
+		Path:         *logPath,
+		PollInterval: *logPollInterval,
+		Output:       os.Stdout,
+		FromStart:    *logFromStart,
+	})
+	if err != nil {
+		return err
+	}
+	g.Go(func() error {
+		return tailer.Start(gctx)
+	})
 
-	if err := tracker.Start(ctx); err != nil && !errors.Is(err, context.Canceled) {
+	if err := g.Wait(); err != nil && !errors.Is(err, context.Canceled) {
 		return err
 	}
 	return nil
