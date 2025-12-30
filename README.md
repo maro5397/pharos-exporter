@@ -62,3 +62,28 @@ The `/metrics` endpoint includes default Go/process/promhttp metrics. Custom met
 - `validator_propose_total` (counter): Total number of propose attempts observed in logs.
 - `validator_vote_inclusion_timestamp` (gauge): Unix timestamp when the validator vote was last included.
 - `validator_vote_inclusion_total` (counter): Total number of blocks where the validator vote was included.
+
+## Systemd Setup
+
+Build the binary and install it to `/usr/local/bin`:
+
+```bash
+go build -o pharos-exporter .
+sudo mv pharos-exporter /usr/local/bin/
+```
+
+Copy the example service unit and update the placeholders:
+
+```bash
+sudo cp pharos-exporter.service.example /etc/systemd/system/pharos-exporter.service
+sudo sed -i 's|<https://YOUR_RPC>|https://YOUR_RPC|g' /etc/systemd/system/pharos-exporter.service
+sudo sed -i 's|<0xYOUR_BLS_KEY>|0xYOUR_BLS_KEY|g' /etc/systemd/system/pharos-exporter.service
+sudo sed -i 's|<YOUR_LOG_PATH>|YOUR_LOG_PATH|g' /etc/systemd/system/pharos-exporter.service
+```
+
+Reload systemd and start the service:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now pharos-exporter
+```
