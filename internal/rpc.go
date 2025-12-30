@@ -93,6 +93,9 @@ func (m *BlockTracker) Start(ctx context.Context) error {
 	}
 	fmt.Fprintf(m.cfg.Output, "RPC: %s start from height: %d\n", m.cfg.RPCURL, lastChecked+1)
 
+	var lastVoteInclusionTs int64
+	var lastActiveTs int64
+
 	for {
 		latestHex, err := fetchBlockNumber(m.cfg.RPCURL)
 		if err != nil {
@@ -124,8 +127,11 @@ func (m *BlockTracker) Start(ctx context.Context) error {
 						break
 					}
 				}
-				writeBoolMetric(m.cfg.Output, "validator_blockproof_has_bls_key", found)
-				fmt.Fprintf(m.cfg.Output, "validator_blockproof_last_height %d\n", h)
+				if found {
+					lastVoteInclusionTs = time.Now().Unix()
+				}
+				writeBoolMetric(m.cfg.Output, "validator_vote_inclusion_status", found)
+				fmt.Fprintf(m.cfg.Output, "validator_vote_inclusion_timestamp %d\n", lastVoteInclusionTs)
 			}
 
 			if m.cfg.CheckValidatorSet {
@@ -139,8 +145,11 @@ func (m *BlockTracker) Start(ctx context.Context) error {
 						found = true
 					}
 				}
-				writeBoolMetric(m.cfg.Output, "validator_validatorset_has_bls_key", found)
-				fmt.Fprintf(m.cfg.Output, "validator_validatorset_last_height %d\n", h)
+				if found {
+					lastActiveTs = time.Now().Unix()
+				}
+				writeBoolMetric(m.cfg.Output, "validator_active_status", found)
+				fmt.Fprintf(m.cfg.Output, "validator_active_timestamp %d\n", lastActiveTs)
 			}
 		}
 		lastChecked = latest
