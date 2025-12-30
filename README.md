@@ -15,7 +15,7 @@ go run . start \
 ### Notes
 - `-log-from-start` reads the log from the beginning; omit it to tail only new lines.
 - The log tailer follows file rotation (e.g. `consensus.log` renamed to `consensus.log.x`).
-- `-check-block-proof` and `-check-validator-set` are enabled by default.
+- `-check-block-proof`, `-check-validator-set`, `-check-propose` and `-check-endorse` are enabled by default.
 
 ### Options
 Use `-h` to see all available flags and defaults:
@@ -28,9 +28,13 @@ Example output:
 ```text
 Usage of start:
   -check-block-proof
-        check signedBlsKeys trigger (default true)
+        check signedBlsKeys metrics (default true)
+  -check-endorse
+        check endorse metrics (default true)
+  -check-propose
+        check propose metrics (default true)
   -check-validator-set
-        check validator set trigger (default true)
+        check validator set metrics (default true)
   -log-from-start
         start reading log from beginning (default: false)
   -log-path string
@@ -40,7 +44,7 @@ Usage of start:
   -my-bls-key string
         my BLS pubkey (0x...)
   -rpc string
-        JSON-RPC endpoint (default "https://atlantic.dplabs-internal.com/")
+        JSON-RPC endpoint (default "https://atlantic-rpc.dplabs-internal.com/")
   -rpc-poll-interval duration
         poll interval for latest block (default 1s)
 ```
