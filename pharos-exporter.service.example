@@ -5,12 +5,11 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/env go run . start \
+ExecStart=/usr/local/bin/pharos-exporter start \
   -rpc <https://YOUR_RPC> \
   -my-bls-key <0xYOUR_BLS_KEY> \
   -log-path <YOUR_LOG_PATH> \
   -exporter-port 9123
-WorkingDirectory=/home/ubuntu/pharos-exporter
 Restart=on-failure
 
 [Install]
