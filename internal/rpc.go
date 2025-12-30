@@ -95,8 +95,6 @@ func (m *BlockTracker) Start(ctx context.Context) error {
 
 	var lastVoteInclusionTs int64
 	var lastActiveTs int64
-	var voteInclusionTotal uint64
-	var activeTotal uint64
 
 	for {
 		latestHex, err := fetchBlockNumber(m.cfg.RPCURL)
@@ -131,10 +129,9 @@ func (m *BlockTracker) Start(ctx context.Context) error {
 				}
 				if found {
 					lastVoteInclusionTs = time.Now().Unix()
-					voteInclusionTotal++
+					VoteInclusionTotal.Inc()
+					VoteInclusionTimestamp.Set(float64(lastVoteInclusionTs))
 				}
-				fmt.Fprintf(m.cfg.Output, "validator_vote_inclusion_total %d\n", voteInclusionTotal)
-				fmt.Fprintf(m.cfg.Output, "validator_vote_inclusion_timestamp %d\n", lastVoteInclusionTs)
 			}
 
 			if m.cfg.CheckValidatorSet {
@@ -150,10 +147,9 @@ func (m *BlockTracker) Start(ctx context.Context) error {
 				}
 				if found {
 					lastActiveTs = time.Now().Unix()
-					activeTotal++
+					ActiveTotal.Inc()
+					ActiveTimestamp.Set(float64(lastActiveTs))
 				}
-				fmt.Fprintf(m.cfg.Output, "validator_active_total %d\n", activeTotal)
-				fmt.Fprintf(m.cfg.Output, "validator_active_timestamp %d\n", lastActiveTs)
 			}
 		}
 		lastChecked = latest
@@ -176,14 +172,6 @@ func sleepWithContext(ctx context.Context, d time.Duration) error {
 	case <-t.C:
 		return nil
 	}
-}
-
-func writeBoolMetric(w io.Writer, name string, v bool) {
-	if v {
-		fmt.Fprintf(w, "%s 1\n", name)
-		return
-	}
-	fmt.Fprintf(w, "%s 0\n", name)
 }
 
 func trim0x(s string) string {

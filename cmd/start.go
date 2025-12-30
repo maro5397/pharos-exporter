@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -12,6 +13,7 @@ import (
 	"pharos-exporter/internal"
 
 	"golang.org/x/sync/errgroup"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func runStart(args []string) error {
@@ -28,12 +30,15 @@ func runStart(args []string) error {
 	logFromStart := fs.Bool("log-from-start", false, "start reading log from beginning (default: false)")
 	rpcPollInterval := fs.Duration("rpc-poll-interval", time.Second, "poll interval for latest block")
 	logPollInterval := fs.Duration("log-poll-interval", time.Second, "poll interval for log tailing")
+	exporterPort := fs.String("exporter-port", "9123", "metrics listen port")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if *logPath == "" {
 		return errors.New("log-path is required")
 	}
+
+	internal.RegisterMetrics()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -67,6 +72,24 @@ func runStart(args []string) error {
 	}
 	g.Go(func() error {
 		return tailer.Start(gctx)
+	})
+
+	server := &http.Server{
+		Addr:    ":" + *exporterPort,
+		Handler: promhttp.Handler(),
+	}
+	g.Go(func() error {
+		err := server.ListenAndServe()
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return err
+	})
+	g.Go(func() error {
+		<-gctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		return server.Shutdown(shutdownCtx)
 	})
 
 	if err := g.Wait(); err != nil && !errors.Is(err, context.Canceled) {

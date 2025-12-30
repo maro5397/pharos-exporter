@@ -30,12 +30,8 @@ type LogTailer struct {
 }
 
 type LogMetrics struct {
-	proposeTotal    uint64
-	lastProposeUnix int64
-	endorseTotal    uint64
-	lastEndorseUnix int64
-	checkPropose    bool
-	checkEndorse    bool
+	checkPropose bool
+	checkEndorse bool
 }
 
 func NewLogTailer(cfg LogTailerConfig) (*LogTailer, error) {
@@ -86,11 +82,7 @@ func (t *LogTailer) Start(ctx context.Context) error {
 		line, err := t.reader.ReadBytes('\n')
 		if len(line) > 0 {
 			lineStr := string(line)
-			for _, metricLine := range t.cfg.Metrics.UpdateAndFormat(lineStr) {
-				if _, werr := fmt.Fprintln(t.cfg.Output, metricLine); werr != nil {
-					return werr
-				}
-			}
+			t.cfg.Metrics.Update(lineStr)
 			t.offset += int64(len(line))
 		}
 		if err == nil {
@@ -176,33 +168,26 @@ func inodeFromInfo(info os.FileInfo) (uint64, error) {
 	return stat.Ino, nil
 }
 
-func (m *LogMetrics) UpdateAndFormat(line string) []string {
+func (m *LogMetrics) Update(line string) {
 	ts := parseLogTimestamp(line)
 
 	if strings.Contains(line, "Propose, seq:") {
 		if !m.checkPropose {
-			return nil
+			return
 		}
-		m.proposeTotal++
-		m.lastProposeUnix = ts
-		return []string{
-			fmt.Sprintf("validator_propose_total %d", m.proposeTotal),
-			fmt.Sprintf("validator_last_propose_timestamp %d", m.lastProposeUnix),
-		}
+		ProposeTotal.Inc()
+		LastProposeTimestamp.Set(float64(ts))
+		return
 	}
 
 	if strings.Contains(line, "endorse seq ") {
 		if !m.checkEndorse {
-			return nil
+			return
 		}
-		m.endorseTotal++
-		m.lastEndorseUnix = ts
-		return []string{
-			fmt.Sprintf("validator_endorse_total %d", m.endorseTotal),
-			fmt.Sprintf("validator_last_endorse_timestamp %d", m.lastEndorseUnix),
-		}
+		EndorseTotal.Inc()
+		LastEndorseTimestamp.Set(float64(ts))
+		return
 	}
-	return nil
 }
 
 func parseLogTimestamp(line string) int64 {
