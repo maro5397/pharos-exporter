@@ -3,12 +3,13 @@ pharos exporter for validators
 
 ## Usage
 
-Run the `start` command with your RPC endpoint, BLS key, and log path:
+Run the `start` command with your RPC endpoint, BLS key, validator address and log path:
 
 ```bash
 go run . start \
   -rpc https://YOUR_RPC \
   -my-bls-key 0xYOUR_BLS_KEY \
+  -my-address 0xYOUR_VALIDATOR_ADDRESS \
   -log-path /data/pharos-node/domain/light/log/consensus.log
 ```
 
@@ -43,6 +44,8 @@ Usage of start:
         path to log file to tail
   -log-poll-interval duration
         poll interval for log tailing (default 1s)
+  -my-address string
+    	my EVM address to track balance (0x...)
   -my-bls-key string
         my BLS pubkey (0x...)
   -rpc string
@@ -62,6 +65,7 @@ The `/metrics` endpoint includes default Go/process/promhttp metrics. Custom met
 - `validator_propose_total` (counter): Total number of propose attempts observed in logs.
 - `validator_vote_inclusion_timestamp` (gauge): Unix timestamp when the validator vote was last included.
 - `validator_vote_inclusion_total` (counter): Total number of blocks where the validator vote was included.
+- `validator_address_balance_eth` (gauge): ETH balance of the validator address
 
 ## Systemd Setup
 
@@ -78,6 +82,7 @@ Copy the example service unit and update the placeholders:
 sudo cp pharos-exporter.service.example /etc/systemd/system/pharos-exporter.service
 sudo sed -i 's|<https://YOUR_RPC>|https://YOUR_RPC|g' /etc/systemd/system/pharos-exporter.service
 sudo sed -i 's|<0xYOUR_BLS_KEY>|0xYOUR_BLS_KEY|g' /etc/systemd/system/pharos-exporter.service
+sudo sed -i 's|<0xYOUR_VALIDATOR_ADDRESS>|0xYOUR_VALIDATOR_ADDRESS|g' /etc/systemd/system/pharos-exporter.service
 sudo sed -i 's|<YOUR_LOG_PATH>|YOUR_LOG_PATH|g' /etc/systemd/system/pharos-exporter.service
 ```
 
