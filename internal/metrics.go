@@ -42,6 +42,10 @@ var (
 		Name: "validator_active_timestamp",
 		Help: "Unix timestamp when validator active status was last observed.",
 	})
+	AddressBalanceETH = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "validator_address_balance_eth",
+		Help: "ETH balance of the configured address (via eth_getBalance)",
+	}, []string{"address"})
 )
 
 func RegisterMetrics() {
@@ -55,6 +59,7 @@ func RegisterMetrics() {
 			VoteInclusionTimestamp,
 			ActiveTotal,
 			ActiveTimestamp,
+			AddressBalanceETH,
 		)
 	})
 }

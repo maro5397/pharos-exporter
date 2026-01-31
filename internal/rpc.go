@@ -11,11 +11,13 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"math/big"
 )
 
 type BlockTrackerConfig struct {
 	RPCURL            string
 	MyBlsKey          string
+	MyAddress         string
 	CheckBlockProof   bool
 	CheckValidatorSet bool
 	PollInterval      time.Duration
@@ -25,6 +27,7 @@ type BlockTrackerConfig struct {
 type BlockTracker struct {
 	cfg           BlockTrackerConfig
 	normalizedKey string
+	address       string
 }
 
 type rpcResponse struct {
@@ -72,9 +75,20 @@ func NewBlockTracker(cfg BlockTrackerConfig) (*BlockTracker, error) {
 		cfg.Output = os.Stdout
 	}
 
+	// address validation + normalization
+	addr := strings.TrimSpace(cfg.MyAddress)
+	if addr != "" {
+		addrLower := strings.ToLower(addr)
+		if !strings.HasPrefix(addrLower, "0x") || len(addrLower) != 42 {
+			return nil, fmt.Errorf("invalid my-address: expected 0x + 40 hex chars")
+		}
+		addr = addrLower
+	}
+
 	m := &BlockTracker{
 		cfg:           cfg,
 		normalizedKey: normalizeBlsKey(cfg.MyBlsKey),
+		address:       addr,
 	}
 	return m, nil
 }
@@ -105,6 +119,16 @@ func (m *BlockTracker) Start(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("parse latest block number failed: %w", err)
 		}
+		
+		// address balance (ETH) once per poll tick
+		if m.address != "" {
+			eth, err := fetchBalanceETH(m.cfg.RPCURL, m.address)
+			if err != nil {
+				return fmt.Errorf("fetch balance failed: %w", err)
+			}
+			AddressBalanceETH.WithLabelValues(strings.ToLower(m.address)).Set(eth)
+		}
+		
 		if latest <= lastChecked {
 			if err := sleepWithContext(ctx, m.cfg.PollInterval); err != nil {
 				return err
@@ -247,6 +271,30 @@ func fetchBlockProof(rpcURL string, height interface{}) (*BlockProof, error) {
 		return nil, fmt.Errorf("parse block proof: %w", err)
 	}
 	return &bp, nil
+}
+
+func fetchBalanceETH(rpcURL, address string) (float64, error) {
+	resultRaw, err := rpcPost(rpcURL, "eth_getBalance", []interface{}{address, "latest"})
+	if err != nil {
+		return 0, fmt.Errorf("rpc call eth_getBalance failed: %w", err)
+	}
+
+	var hexStr string
+	if err := json.Unmarshal(resultRaw, &hexStr); err != nil {
+		return 0, fmt.Errorf("parse eth_getBalance result failed: %w", err)
+	}
+
+	wei := new(big.Int)
+	if _, ok := wei.SetString(trim0x(hexStr), 16); !ok {
+		return 0, fmt.Errorf("invalid balance hex: %q", hexStr)
+	}
+
+	// convert Wei -> ETH as float64 for Prometheus gauge
+	weiF := new(big.Float).SetPrec(256).SetInt(wei)
+	ethF := new(big.Float).SetPrec(256).Quo(weiF, big.NewFloat(1e18))
+
+	eth, _ := ethF.Float64()
+	return eth, nil
 }
 
 func parseHeight(s string) (uint64, bool, error) {
