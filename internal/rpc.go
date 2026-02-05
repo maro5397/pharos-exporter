@@ -6,12 +6,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/big"
 	"net/http"
 	"os"
 	"strconv"
 	"strings"
 	"time"
-	"math/big"
 )
 
 type BlockTrackerConfig struct {
@@ -119,7 +119,7 @@ func (m *BlockTracker) Start(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("parse latest block number failed: %w", err)
 		}
-		
+
 		// address balance (ETH) once per poll tick
 		if m.address != "" {
 			eth, err := fetchBalanceETH(m.cfg.RPCURL, m.address)
@@ -128,7 +128,7 @@ func (m *BlockTracker) Start(ctx context.Context) error {
 			}
 			AddressBalanceETH.WithLabelValues(strings.ToLower(m.address)).Set(eth)
 		}
-		
+
 		if latest <= lastChecked {
 			if err := sleepWithContext(ctx, m.cfg.PollInterval); err != nil {
 				return err
@@ -206,6 +206,9 @@ func trim0x(s string) string {
 }
 
 func rpcPost(url, method string, params interface{}) (json.RawMessage, error) {
+	const rpcRetryBaseDelay = 200 * time.Millisecond
+	const rpcRetryMaxDelay = 2 * time.Second
+
 	reqBody := map[string]interface{}{
 		"jsonrpc": "2.0",
 		"id":      1,
@@ -216,21 +219,34 @@ func rpcPost(url, method string, params interface{}) (json.RawMessage, error) {
 	if err != nil {
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
-	resp, err := http.Post(url, "application/json", bytes.NewReader(b))
-	if err != nil {
-		return nil, fmt.Errorf("http post: %w", err)
-	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
 
-	var r rpcResponse
-	if err := json.Unmarshal(body, &r); err != nil {
-		return nil, fmt.Errorf("unmarshal rpc response: %w (body=%s)", err, string(body))
+	for attempt := 0; ; attempt++ {
+		resp, err := http.Post(url, "application/json", bytes.NewReader(b))
+		if err == nil {
+			body, readErr := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if readErr != nil {
+				err = fmt.Errorf("read response body: %w", readErr)
+			} else if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+				err = fmt.Errorf("http status: %s", resp.Status)
+			} else {
+				var r rpcResponse
+				if unmarshalErr := json.Unmarshal(body, &r); unmarshalErr != nil {
+					err = fmt.Errorf("unmarshal rpc response: %w (body=%s)", unmarshalErr, string(body))
+				} else if r.Error != nil {
+					err = fmt.Errorf("rpc error: %d %s", r.Error.Code, r.Error.Message)
+				} else {
+					return r.Result, nil
+				}
+			}
+		}
+
+		backoff := rpcRetryBaseDelay * (1 << attempt)
+		if backoff > rpcRetryMaxDelay {
+			backoff = rpcRetryMaxDelay
+		}
+		time.Sleep(backoff)
 	}
-	if r.Error != nil {
-		return nil, fmt.Errorf("rpc error: %d %s", r.Error.Code, r.Error.Message)
-	}
-	return r.Result, nil
 }
 
 func fetchBlockNumber(rpcURL string) (string, error) {
