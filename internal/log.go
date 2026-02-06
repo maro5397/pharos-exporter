@@ -12,6 +12,7 @@ import (
 )
 
 type LogTailerConfig struct {
+	MyNodeId     string
 	Path         string
 	PollInterval time.Duration
 	Output       io.Writer
@@ -32,6 +33,7 @@ type LogTailer struct {
 type LogMetrics struct {
 	checkPropose bool
 	checkEndorse bool
+	nodeIdPrefix string
 }
 
 func NewLogTailer(cfg LogTailerConfig) (*LogTailer, error) {
@@ -49,6 +51,7 @@ func NewLogTailer(cfg LogTailerConfig) (*LogTailer, error) {
 	}
 	cfg.Metrics.checkPropose = cfg.CheckPropose
 	cfg.Metrics.checkEndorse = cfg.CheckEndorse
+	cfg.Metrics.nodeIdPrefix = nodeIdPrefix(cfg.MyNodeId)
 	return &LogTailer{cfg: cfg}, nil
 }
 
@@ -184,6 +187,11 @@ func (m *LogMetrics) Update(line string) {
 		if !m.checkEndorse {
 			return
 		}
+		if m.nodeIdPrefix != "" {
+			if !endorseProposerMatches(line, m.nodeIdPrefix) {
+				return
+			}
+		}
 		EndorseTotal.Inc()
 		LastEndorseTimestamp.Set(float64(ts))
 		return
@@ -203,4 +211,26 @@ func parseLogTimestamp(line string) int64 {
 		return time.Now().Unix()
 	}
 	return ts.Unix()
+}
+
+func nodeIdPrefix(nodeID string) string {
+	nodeID = strings.ToLower(strings.TrimSpace(nodeID))
+	nodeID = strings.TrimPrefix(nodeID, "0x")
+	if len(nodeID) < 8 {
+		return ""
+	}
+	return nodeID[:8]
+}
+
+func endorseProposerMatches(line, prefix string) bool {
+	idx := strings.Index(line, "proposer ")
+	if idx == -1 {
+		return false
+	}
+	start := idx + len("proposer ")
+	if len(line) < start+8 {
+		return false
+	}
+	proposer := strings.ToLower(line[start : start+8])
+	return proposer == prefix
 }
