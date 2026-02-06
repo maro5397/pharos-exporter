@@ -94,7 +94,7 @@ func NewBlockTracker(cfg BlockTrackerConfig) (*BlockTracker, error) {
 }
 
 func (m *BlockTracker) Start(ctx context.Context) error {
-	latestHex, err := fetchBlockNumber(m.cfg.RPCURL)
+	latestHex, err := fetchBlockNumber(ctx, m.cfg.RPCURL)
 	if err != nil {
 		return fmt.Errorf("fetch latest block number failed: %w", err)
 	}
@@ -111,7 +111,7 @@ func (m *BlockTracker) Start(ctx context.Context) error {
 	var lastActiveTs int64
 
 	for {
-		latestHex, err := fetchBlockNumber(m.cfg.RPCURL)
+		latestHex, err := fetchBlockNumber(ctx, m.cfg.RPCURL)
 		if err != nil {
 			return fmt.Errorf("fetch latest block number failed: %w", err)
 		}
@@ -122,7 +122,7 @@ func (m *BlockTracker) Start(ctx context.Context) error {
 
 		// address balance (ETH) once per poll tick
 		if m.address != "" {
-			eth, err := fetchBalanceETH(m.cfg.RPCURL, m.address)
+			eth, err := fetchBalanceETH(ctx, m.cfg.RPCURL, m.address)
 			if err != nil {
 				return fmt.Errorf("fetch balance failed: %w", err)
 			}
@@ -140,7 +140,7 @@ func (m *BlockTracker) Start(ctx context.Context) error {
 			heightHex := fmt.Sprintf("0x%x", h)
 
 			if m.cfg.CheckBlockProof {
-				bp, err := fetchBlockProof(m.cfg.RPCURL, heightHex)
+				bp, err := fetchBlockProof(ctx, m.cfg.RPCURL, heightHex)
 				if err != nil {
 					return fmt.Errorf("fetch block proof failed (height=%s): %w", heightHex, err)
 				}
@@ -159,7 +159,7 @@ func (m *BlockTracker) Start(ctx context.Context) error {
 			}
 
 			if m.cfg.CheckValidatorSet {
-				validators, err := fetchValidators(m.cfg.RPCURL, heightHex)
+				validators, err := fetchValidators(ctx, m.cfg.RPCURL, heightHex)
 				if err != nil {
 					return fmt.Errorf("fetch validators failed (height=%s): %w", heightHex, err)
 				}
@@ -205,7 +205,7 @@ func trim0x(s string) string {
 	return s
 }
 
-func rpcPost(url, method string, params interface{}) (json.RawMessage, error) {
+func rpcPost(ctx context.Context, url, method string, params interface{}) (json.RawMessage, error) {
 	const rpcRetryBaseDelay = 200 * time.Millisecond
 	const rpcRetryMaxDelay = 2 * time.Second
 
@@ -221,7 +221,19 @@ func rpcPost(url, method string, params interface{}) (json.RawMessage, error) {
 	}
 
 	for attempt := 0; ; attempt++ {
-		resp, err := http.Post(url, "application/json", bytes.NewReader(b))
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+		}
+
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(b))
+		if err != nil {
+			return nil, fmt.Errorf("new request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := http.DefaultClient.Do(req)
 		if err == nil {
 			body, readErr := io.ReadAll(resp.Body)
 			resp.Body.Close()
@@ -245,12 +257,14 @@ func rpcPost(url, method string, params interface{}) (json.RawMessage, error) {
 		if backoff > rpcRetryMaxDelay {
 			backoff = rpcRetryMaxDelay
 		}
-		time.Sleep(backoff)
+		if err := sleepWithContext(ctx, backoff); err != nil {
+			return nil, err
+		}
 	}
 }
 
-func fetchBlockNumber(rpcURL string) (string, error) {
-	resultRaw, err := rpcPost(rpcURL, "eth_blockNumber", []interface{}{})
+func fetchBlockNumber(ctx context.Context, rpcURL string) (string, error) {
+	resultRaw, err := rpcPost(ctx, rpcURL, "eth_blockNumber", []interface{}{})
 	if err != nil {
 		return "0x0", fmt.Errorf("rpc call eth_blockNumber failed: %w", err)
 	}
@@ -263,8 +277,8 @@ func fetchBlockNumber(rpcURL string) (string, error) {
 	return hexStr, nil
 }
 
-func fetchValidators(rpcURL string, height interface{}) ([]ValidatorSetInfo, error) {
-	resultRaw, err := rpcPost(rpcURL, "debug_getValidatorInfo", []interface{}{height})
+func fetchValidators(ctx context.Context, rpcURL string, height interface{}) ([]ValidatorSetInfo, error) {
+	resultRaw, err := rpcPost(ctx, rpcURL, "debug_getValidatorInfo", []interface{}{height})
 	if err != nil {
 		return nil, err
 	}
@@ -277,8 +291,8 @@ func fetchValidators(rpcURL string, height interface{}) ([]ValidatorSetInfo, err
 	return vInfo.ValidatorSet, nil
 }
 
-func fetchBlockProof(rpcURL string, height interface{}) (*BlockProof, error) {
-	resultRaw, err := rpcPost(rpcURL, "debug_getBlockProof", []interface{}{height})
+func fetchBlockProof(ctx context.Context, rpcURL string, height interface{}) (*BlockProof, error) {
+	resultRaw, err := rpcPost(ctx, rpcURL, "debug_getBlockProof", []interface{}{height})
 	if err != nil {
 		return nil, err
 	}
@@ -289,8 +303,8 @@ func fetchBlockProof(rpcURL string, height interface{}) (*BlockProof, error) {
 	return &bp, nil
 }
 
-func fetchBalanceETH(rpcURL, address string) (float64, error) {
-	resultRaw, err := rpcPost(rpcURL, "eth_getBalance", []interface{}{address, "latest"})
+func fetchBalanceETH(ctx context.Context, rpcURL, address string) (float64, error) {
+	resultRaw, err := rpcPost(ctx, rpcURL, "eth_getBalance", []interface{}{address, "latest"})
 	if err != nil {
 		return 0, fmt.Errorf("rpc call eth_getBalance failed: %w", err)
 	}
