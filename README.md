@@ -10,6 +10,7 @@ go run . start \
   -rpc https://YOUR_RPC \
   -my-bls-key 0xYOUR_BLS_KEY \
   -my-address 0xYOUR_VALIDATOR_ADDRESS \
+  -my-node-id YOUR_NODE_ID \
   -log-path /data/pharos-node/domain/light/log/consensus.log
 ```
 
@@ -45,7 +46,9 @@ Usage of start:
   -log-poll-interval duration
         poll interval for log tailing (default 1s)
   -my-address string
-    	my EVM address to track balance (0x...)
+    	  my EVM address to track balance (0x...)
+  -my-node-id string
+        my node id
   -my-bls-key string
         my BLS pubkey (0x...)
   -rpc string
@@ -83,6 +86,7 @@ sudo cp pharos-exporter.service.example /etc/systemd/system/pharos-exporter.serv
 sudo sed -i 's|<https://YOUR_RPC>|https://YOUR_RPC|g' /etc/systemd/system/pharos-exporter.service
 sudo sed -i 's|<0xYOUR_BLS_KEY>|0xYOUR_BLS_KEY|g' /etc/systemd/system/pharos-exporter.service
 sudo sed -i 's|<0xYOUR_VALIDATOR_ADDRESS>|0xYOUR_VALIDATOR_ADDRESS|g' /etc/systemd/system/pharos-exporter.service
+sudo sed -i 's|<YOUR_NODE_ID>|YOUR_NODE_ID|g' /etc/systemd/system/pharos-exporter.service
 sudo sed -i 's|<YOUR_LOG_PATH>|YOUR_LOG_PATH|g' /etc/systemd/system/pharos-exporter.service
 ```
 
